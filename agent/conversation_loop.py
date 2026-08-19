@@ -1418,6 +1418,17 @@ def run_conversation(
     agent._last_compression_attempt_in_place = None
     begin_fast_mode_turn(agent, conversation_history)
 
+    # Per-turn reset of the #25723 session-permanent streaming fallback:
+    # one transient "stream not supported" error must not strand the whole
+    # session on silent non-streaming calls — fatal behind proxies that kill
+    # idle connections (z.ai edge ~180-210s → HTTP 524). Scoped per turn so
+    # the within-turn retry fallback (#24532) still works as designed.
+    if getattr(agent, "_disable_streaming", False):
+        logger.info(
+            "Re-enabling streaming for new turn — previous fallback "
+            "was scoped to the prior turn only (#25723)."
+        )
+        agent._disable_streaming = False
     # Adopt ~/.hermes/.env credential/base-url edits made since the last turn — a
     # Settings save updates .env, not this worker's client (#67821). No-op if unchanged.
     try:
