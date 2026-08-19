@@ -18,6 +18,7 @@ import tui_gateway.server as server
 from toolsets import TOOLSETS, resolve_toolset
 
 GUI_TOOLS = {
+    "act_preview",
     "close_terminal",
     "focus_pane",
     "open_preview",
