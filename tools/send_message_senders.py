@@ -106,8 +106,33 @@ def _is_telegram_thread_not_found(error: Exception) -> bool:
 
 def _telegram_bot(token):
     """Bot honouring TELEGRAM_PROXY (standalone sends time out where api.telegram.org is
-    blocked); falls back to a direct connection."""
+    blocked); a relay/custom Bot API endpoint (``platforms.telegram.extra.base_url`` —
+    the same key the in-gateway adapter applies at Application-builder time) takes
+    precedence over the proxy: the relay is reached directly, and stacking
+    TELEGRAM_PROXY on top of it only adds a failure mode. Falls back to a direct
+    connection."""
     from telegram import Bot
+    # Relay first (relay > proxy > direct ladder): without this, standalone sends
+    # (cron deliver=telegram, one-shot send_message) keep hitting api.telegram.org
+    # directly and break on DPI-blocked networks once TELEGRAM_PROXY is removed.
+    base_url = None
+    base_file_url = None
+    try:
+        from gateway.config import Platform, load_gateway_config
+        pconfig = load_gateway_config().platforms.get(Platform.TELEGRAM)
+        extra = getattr(pconfig, "extra", None) if pconfig else None
+        if isinstance(extra, dict):
+            base_url = extra.get("base_url") or None
+            base_file_url = extra.get("base_file_url") or base_url
+    except Exception as cfg_err:
+        logger.debug("send_message: telegram extra config unavailable (%s)", cfg_err)
+    if base_url:
+        logger.info("send_message: standalone Telegram send via relay base_url %s", base_url)
+        return Bot(
+            token=token,
+            base_url=base_url,
+            base_file_url=base_file_url if base_file_url else base_url,
+        )
     try:
         from gateway.platforms.base import resolve_proxy_url
         proxy = resolve_proxy_url("TELEGRAM_PROXY", target_hosts=["api.telegram.org"])
