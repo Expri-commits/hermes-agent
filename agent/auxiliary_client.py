@@ -4197,6 +4197,16 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
         headers = _apply_user_default_headers(build_or_headers())
     elif _is_official_codex_base_url(sync_base_url):
         headers = _apply_user_default_headers(_codex_cloudflare_headers(sync_client.api_key, base_url=sync_base_url))
+    elif base_url_host_matches(sync_base_url, "opencode.ai") and (
+            str(getattr(sync_client, "api_key", "") or "") == "opencode-zen-free-keyless"):
+        # Zen free tier: the sync client ships an empty Authorization header
+        # (opencode_zen_free_headers) so the keyless placeholder never reaches
+        # the wire — the relay 401s any unrecognized bearer. Rebuild the same
+        # header set for the async client; without it the AsyncOpenAI SDK sends
+        # "Authorization: Bearer ***" and every async vision call 401s.
+        from hermes_cli.models import opencode_zen_free_headers
+
+        headers = opencode_zen_free_headers()
     else:
         # Provider for the profile-header fallback is inferred from the hostname.
         try:
