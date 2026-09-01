@@ -201,6 +201,43 @@ def _toolset_rows(params: dict, *, with_tools: bool) -> list[dict]:
 
 
 # ─── System / process ────────────────────────────────────────────────────────
+
+
+def _pre_gateway_rewrite(cmd_text: str) -> "str | None":
+    """Gateway parity for the desktop/TUI slash path.
+
+    The message gateway fires pre_gateway_dispatch before dispatching
+    inbound messages, letting plugins rewrite slash commands into normal
+    agent prompts (e.g. ponytail's /ponytail-* skill commands).
+    slash.exec/command.dispatch bypassed that hook, so those commands died
+    in the plugin-command string-in/string-out path on desktop. Returns the
+    rewritten text to submit as a user message, or None for normal dispatch.
+    """
+    if not cmd_text.startswith("/"):
+        return None
+
+    class _RewriteEvent:
+        __slots__ = ("text",)
+
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    try:
+        from hermes_cli.lifecycle import invoke_hook as _invoke_lifecycle_hook
+
+        for _result in _invoke_lifecycle_hook(
+            "pre_gateway_dispatch", event=_RewriteEvent(cmd_text), gateway=None
+        ):
+            if (
+                isinstance(_result, dict)
+                and _result.get("action") == "rewrite"
+                and isinstance(_result.get("text"), str)
+                and _result["text"].strip()
+            ):
+                return _result["text"]
+    except Exception:
+        pass
+    return None
 @method("system.battery")
 def _(rid, params: dict) -> dict:
     """Host battery for the status bar. Always resolves; ``available: false`` = no battery or read failed."""
@@ -816,6 +853,16 @@ def _(rid, params: dict) -> dict:
     name, arg = _resolve_name(params.get("name", "").lstrip("/")), params.get("arg", "")
     session = _sessions.get(params.get("session_id", ""))
 
+    # Gateway parity: pre_gateway_dispatch plugin hooks may rewrite a slash
+    # command into an agent prompt (ponytail /ponytail-*). Submit the rewrite
+    # as a normal user message, exactly as the message gateway does.
+    _rewritten = _pre_gateway_rewrite(f"/{name} {arg}".strip())
+    if _rewritten is not None:
+        return _methods["prompt.submit"](
+            rid,
+            {"session_id": params.get("session_id", ""), "text": _rewritten},
+        )
+
     # Stage order is load-bearing: quick > plugin > bundle > skill > built-in.
     stages = (_dispatch_quick, _dispatch_plugin, _dispatch_bundle, _dispatch_skill, _SLASH_BUILTINS.get(name))
     for stage in filter(None, stages):
@@ -833,6 +880,16 @@ def _(rid, params: dict) -> dict:
     cmd = params.get("command", "").strip()
     if not cmd:
         return _err(rid, 4004, "empty command")
+    # Gateway parity: pre_gateway_dispatch plugin hooks may rewrite a slash
+    # command into an agent prompt (ponytail /ponytail-*). Submit the rewrite
+    # as a normal user message, exactly as the message gateway does.
+    _rewritten = _pre_gateway_rewrite(cmd)
+    if _rewritten is not None:
+        return _methods["prompt.submit"](
+            rid,
+            {"session_id": params.get("session_id", ""), "text": _rewritten},
+        )
+
     # Skill/bundle and _PENDING_INPUT_COMMANDS must NOT reach the slash worker. Plugin
     # commands also bypass it but return normal slash.exec output (TUI keeps the pager path).
     parts = cmd.lstrip("/").split(maxsplit=1)
