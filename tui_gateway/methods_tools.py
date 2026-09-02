@@ -856,7 +856,12 @@ def _(rid, params: dict) -> dict:
     # Gateway parity: pre_gateway_dispatch plugin hooks may rewrite a slash
     # command into an agent prompt (ponytail /ponytail-*). Submit the rewrite
     # as a normal user message, exactly as the message gateway does.
+    # (Handler bodies are rebound onto server.py globals by method_ctx, so
+    # the helper must be resolved from its own module at call time.)
+    from tui_gateway.methods_tools import _pre_gateway_rewrite
+
     _rewritten = _pre_gateway_rewrite(f"/{name} {arg}".strip())
+
     if _rewritten is not None:
         return _methods["prompt.submit"](
             rid,
@@ -883,7 +888,12 @@ def _(rid, params: dict) -> dict:
     # Gateway parity: pre_gateway_dispatch plugin hooks may rewrite a slash
     # command into an agent prompt (ponytail /ponytail-*). Submit the rewrite
     # as a normal user message, exactly as the message gateway does.
+    # (Handler bodies are rebound onto server.py globals by method_ctx, so
+    # the helper must be resolved from its own module at call time.)
+    from tui_gateway.methods_tools import _pre_gateway_rewrite
+
     _rewritten = _pre_gateway_rewrite(cmd)
+
     if _rewritten is not None:
         return _methods["prompt.submit"](
             rid,
