@@ -2756,11 +2756,18 @@ class TelegramAdapter(BasePlatformAdapter):
         bot_commands = [BotCommand(name, desc) for name, desc in menu_commands]
         for scope_cls in (BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats):
             scope_name = getattr(scope_cls, "__name__", str(scope_cls))
-            try:
-                await self._bot.set_my_commands(bot_commands, scope=scope_cls())
-                logger.info("[%s] set_my_commands OK for scope %s (%d cmds)", self.name, scope_name, len(bot_commands))
-            except Exception as scope_err:
-                logger.warning("[%s] set_my_commands FAILED for scope %s: %s", self.name, scope_name, scope_err)
+            # ponytail: one retry covers the relay's transient drop of rapid sequential
+            # set_my_commands calls (3rd scope hangs ~60s then times out); no backoff loop.
+            for attempt in (1, 2):
+                try:
+                    await self._bot.set_my_commands(bot_commands, scope=scope_cls())
+                    logger.info("[%s] set_my_commands OK for scope %s (%d cmds)", self.name, scope_name, len(bot_commands))
+                    break
+                except Exception as scope_err:
+                    if attempt == 1:
+                        await asyncio.sleep(3)
+                        continue
+                    logger.warning("[%s] set_my_commands FAILED for scope %s: %s", self.name, scope_name, scope_err)
         if hidden_count:
             logger.info(
                 "[%s] Telegram menu: %d commands registered, %d hidden (over %d limit). Use /commands for full list.",
