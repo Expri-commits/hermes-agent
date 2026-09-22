@@ -155,6 +155,8 @@ class ProfileRow(Result):
     description: str = ""
     display_name: str = ""
     skill_count: int = 0
+    # Canonical ids this profile was previously known by (``hermes profile rename``
+    # appends); methods_profiles emits it so Bot Mode group chats re-link stale handles.
     previous_names: list[str] = Field(default_factory=list)
     role: Literal["setup"] | None = None
     last_session: ProfileSessionPreview | None = None
